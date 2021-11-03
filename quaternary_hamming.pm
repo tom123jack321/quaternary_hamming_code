@@ -3,9 +3,8 @@
 ##!/usr/bin/perl
 # naming convention: 1. A: array; 2. H: hash; 3. R: reference; 4. Sr: subroutine; 5.
 #mark a#
-package DNAstorage;
 
-use v5.24.1;
+use v5.21.1;
 use utf8;
 use strict;
 use warnings;
@@ -14,7 +13,7 @@ use POSIX qw/ ceil floor /;
 use Data::Dump qw/ dump /;  #dump @AoA;
 use Exporter qw/ import /;
 use Storable qw/ store retrieve /;
-use List::Util qw/ sum /;
+use List::Util qw/ sum any /;
 #mark b#
 
 our @ISA = qw/ Exporter /;
@@ -23,18 +22,31 @@ our @EXPORT_OK = qw /
 #mark c#
 
 my $eps = 1.e-9;
-# my $a_in = "0123";      # $c : 0102123
-my $a_in = "0123" . "2311" . "010";   # $c : 320012302311010
-print '$a_in   '; say $a_in;
-my $c = & encode_q_hamming ($a_in, );
-print '$c   '; say $c;  
 
-$c = "320012302311011";   # the last digit is changed to 1
-$c = "320012302311030";   # the -2nd digit is changed to 3
-$c = "120012302311010";   # the 1st digit is changed to 1
-# $c = "0102120";   # the last digit changed to 0
-my $a_corrected = & decode_q_hamming ($c, );
-print '$a_corrected   '; say $a_corrected;
+# test
+my $len_a_max = 11;
+my $a_in = "";
+# my $a_in = "0123" . "2311" . "010";   # $c : 320012302311010
+for my $l (1 .. $len_a_max){
+  map { $a_in .= int(rand(4)) } 1 .. $l;
+  print '$a_in   '; say $a_in;
+  my $c = & encode_q_hamming ($a_in, );
+  my $len_c = length $c;
+  for my $i (0 .. ($len_c-1)){
+    for my $j (0 .. 3){
+      print '($i, $j, )  '; map {print "|$_"; } ($i, $j, ); say '|';
+      my $c = & encode_q_hamming ($a_in, );
+      print '$c   '; say $c;
+      my $len_c = length $c;
+      substr $c, $i, 1, $j;
+      print '$c   '; say $c;
+      my $a_corrected = & decode_q_hamming ($c, );
+      print '$a_in   '; say $a_in;
+      print '$a_corrected   '; say $a_corrected;
+      die unless $a_corrected eq $a_in;
+    }
+  }
+}
 
 #mark z#
 
@@ -55,7 +67,7 @@ sub encode_q_hamming (){
     }
   }
   # print '@a  '; map {print "|$_"; } @a; say '|';
-  print 'dump @c   '; say dump @c;
+  # print 'dump @c   '; say dump @c;
   for my $i (1 .. $m){
     my $p = 0;          # $p : checksum
     my $k_max = 0;
@@ -65,8 +77,6 @@ sub encode_q_hamming (){
       my $j_sta = 2**($i-1) * (2*$k+1);
       my $j_end = 2**($i-1) * (2*$k+2) -1;
       for my $j ( $j_sta .. $j_end ){
-        die '($i, $k, $j_sta, $j_end, $j, ) ' . "($i, $k, $j_sta, $j_end, $j, )"
-          if $j > 2**($i-1) and not defined $c[$j-1];
         $p += $c[$j-1] if $j > 2**($i-1) and $j <= $n+$m;
       }
     }
@@ -97,8 +107,6 @@ sub decode_q_hamming (){
       my $j_sta = 2**($i-1) * (2*$k+1);
       my $j_end = 2**($i-1) * (2*$k+2) -1;
       for my $j ( $j_sta .. $j_end ){
-        die '($i, $k, $j_sta, $j_end, $j, ) ' . "($i, $k, $j_sta, $j_end, $j, )"
-          if $j > 2**($i-1) and not defined $c[$j-1];
         if ( $j > 2**($i-1) and $j <= $n+$m ){
           $p += $c[$j-1];
           push @{ $set_index_each_p_R->[$i-1] }, $j;
@@ -116,14 +124,14 @@ sub decode_q_hamming (){
   # print 'dump $set_index_each_p_R     '; say dump $set_index_each_p_R  ;
   # print '$v   '; say $v;
   # if no errors or only one of the checksum digits is wrong
-  if ( abs($v)<$eps or grep { abs($v-$_)<$eps } @set_index_p ){
+  if ( abs($v)<$eps or any { abs($v- 2**($_-1))<$eps } @set_index_p ){
     # $a_crt : corrected a
     my $a_crt = & extract_data_qh (\@c, $m);
     return $a_crt;
   }
   # if one element of the data sequence is wrong
   for my $i (@set_index_p){
-    if ( grep { abs($v-$_)<$eps } @{$set_index_each_p_R->[$i-1]} ){
+    if ( any { abs($v-$_)<$eps } @{$set_index_each_p_R->[$i-1]} ){
       my $p_i = $c[2**($i-1)-1];
       my $c_v = $c[$v-1];         # the wrong element
       $c_v = ($p_i - ($w[$i-1]-$c_v) )%4;     # the correct one
